@@ -21,6 +21,7 @@
   var startedAt = Date.now();
   var maxScroll = 0;
   var leaveSent = false;
+  var exposed = {};
 
   function uuid() {
     try {
@@ -62,6 +63,23 @@
 
   var attribution = getAttribution();
 
+  // A/B 실험 배정: 세션 단위 50/50, sessionStorage로 고정 ---------------------
+  function assignExperiment(key) {
+    var storageKey = 'pnu_exp_' + key;
+    var existing = storageGet('sessionStorage', storageKey);
+    if (existing === 'A' || existing === 'B') return existing;
+    var variant = Math.random() < 0.5 ? 'A' : 'B';
+    storageSet('sessionStorage', storageKey, variant);
+    return variant;
+  }
+
+  var experiments = {
+    exp_price_frame: assignExperiment('exp_price_frame'),
+    exp_quick_checkout: assignExperiment('exp_quick_checkout')
+  };
+
+  window.PNUExperiments = experiments;
+
   function isMobile() {
     return window.matchMedia('(max-width: 820px)').matches;
   }
@@ -75,7 +93,8 @@
       utm_source: attribution.utm_source,
       utm_medium: attribution.utm_medium,
       utm_campaign: attribution.utm_campaign,
-      utm_content: attribution.utm_content
+      utm_content: attribution.utm_content,
+      experiments: experiments
     };
   }
 
@@ -137,13 +156,29 @@
     });
   }
 
+  function exposure(key, name) {
+    if (exposed[key]) return;
+    exposed[key] = true;
+    enqueue('experiment_exposure', {
+      section: 'experiment',
+      element: key,
+      metadata: {
+        exp_key: key,
+        exp_name: name,
+        variant: experiments[key] || 'A'
+      }
+    });
+  }
+
   function setupSectionViews() {
     var sections = document.querySelectorAll('[data-section]');
     if (!sections.length) return;
 
     if (!('IntersectionObserver' in window)) {
       Array.prototype.forEach.call(sections, function (el) {
-        enqueue('section_view', { section: el.getAttribute('data-section') });
+        var name = el.getAttribute('data-section');
+        enqueue('section_view', { section: name });
+        if (name === 'tickets') exposure('exp_price_frame', '티켓 가격 프레이밍');
       });
       return;
     }
@@ -155,6 +190,7 @@
         if (entry.isIntersecting && !seen[name]) {
           seen[name] = true;
           enqueue('section_view', { section: name });
+          if (name === 'tickets') exposure('exp_price_frame', '티켓 가격 프레이밍');
           observer.unobserve(entry.target);
         }
       });
@@ -221,9 +257,11 @@
 
   window.PNUTrack = {
     event: track,
+    exposure: exposure,
     flush: flush,
     sessionId: sessionId,
     attribution: attribution,
+    experiments: experiments,
     getElapsedSeconds: function () { return Math.round((Date.now() - startedAt) / 1000); },
     getScrollDepth: function () { return maxScroll; }
   };

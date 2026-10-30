@@ -3,12 +3,15 @@
 
   var cfg = window.PNU_CONFIG || {};
   var track = window.PNUTrack ? window.PNUTrack.event : function () {};
+  var experiments = window.PNUExperiments || { exp_price_frame: 'A', exp_quick_checkout: 'A' };
   var won = new Intl.NumberFormat('ko-KR');
 
+  document.body.classList.toggle('exp-price-b', experiments.exp_price_frame === 'B');
+
   var TICKETS = {
-    solo: { type: 'SOLO', note: '1인 입장', price: 12000 },
-    couple: { type: 'COUPLE', note: '2인 입장', price: 20000 },
-    group: { type: 'GROUP', note: '4인 입장', price: 45000 }
+    solo: { type: 'SOLO', note: '1인 입장', price: 12000, persons: 1 },
+    couple: { type: 'COUPLE', note: '2인 입장', price: 20000, persons: 2 },
+    group: { type: 'GROUP', note: '4인 입장', price: 45000, persons: 4 }
   };
 
   /* ------------------------------------------------------------- reveal anim */
@@ -151,7 +154,12 @@
     if (!t) return;
     selType.textContent = t.type;
     selNote.textContent = t.note;
-    selPrice.textContent = won.format(t.price) + '원';
+    if (experiments.exp_price_frame === 'B') {
+      var perPerson = Math.round(t.price / t.persons);
+      selPrice.innerHTML = won.format(perPerson) + '원 <small>/ 1인</small>';
+    } else {
+      selPrice.textContent = won.format(t.price) + '원';
+    }
     qtyValue.textContent = String(qty);
     totalEl.textContent = won.format(amountFor(currentTier, qty)) + '원';
   }
@@ -171,10 +179,35 @@
     successStep.hidden = true;
     renderSelection();
 
+    var quick = experiments.exp_quick_checkout === 'B';
+    var card = modal.querySelector('.modal-card');
+    if (card) card.classList.toggle('is-quick', quick);
+
+    var nameInput = form.querySelector('input[name="name"]');
+    var phoneInput = form.querySelector('input[name="phone"]');
+    if (nameInput) nameInput.required = !quick;
+    if (phoneInput) phoneInput.required = !quick;
+
+    var title = document.getElementById('checkout-title');
+    if (title) title.textContent = quick ? '1초 만에 예매를 완료하세요' : '예매를 마무리해 주세요';
+    submitBtn.textContent = quick ? '1초 만에 예매 완료' : '결제하고 예매 완료';
+
+    var note = form.querySelector('.demo-note');
+    if (note) {
+      note.textContent = quick
+        ? '원클릭 예매 변형입니다. 이름·연락처 입력 없이 예매가 완료되며, 실제 결제는 이루어지지 않습니다.'
+        : '데모 페이지입니다. 이름과 연락처는 서버로 전송되지 않으며, 실제 결제도 이루어지지 않습니다.';
+    }
+
     modal.hidden = false;
     document.body.classList.add('modal-open');
     var closeBtn = modal.querySelector('.modal-close');
     if (closeBtn) closeBtn.focus();
+
+    if (window.PNUTrack && window.PNUTrack.exposure) {
+      window.PNUTrack.exposure('exp_price_frame', '티켓 가격 프레이밍');
+      window.PNUTrack.exposure('exp_quick_checkout', '결제 마찰 (원클릭 예매)');
+    }
 
     track('checkout_open', {
       section: 'tickets',
@@ -312,7 +345,9 @@
         purchased = true;
         processing = false;
         submitBtn.disabled = false;
-        submitBtn.textContent = '결제하고 예매 완료';
+        submitBtn.textContent = experiments.exp_quick_checkout === 'B'
+          ? '1초 만에 예매 완료'
+          : '결제하고 예매 완료';
 
         var confirmBtn = successStep.querySelector('[data-close-modal]');
         if (confirmBtn) confirmBtn.focus();
